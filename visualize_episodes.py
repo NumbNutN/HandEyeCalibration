@@ -40,6 +40,7 @@ def load_hdf5(dataset_dir, dataset_name):
 
     return qpos, qvel, effort, action, base_action, image_dict
 
+from utils import draw_chessboard_corners
 
 def main(args):
     dataset_dir = args['dataset_dir']
@@ -50,6 +51,7 @@ def main(args):
 
     qpos, qvel, effort, action, base_action, image_dict = load_hdf5(os.path.join(dataset_dir, task_name), dataset_name)
     
+    image_dict["cam_left_wrist"] = [draw_chessboard_corners(image) for image in image_dict["cam_left_wrist"]]
     print('hdf5 loaded!!')
 
     if not os.path.isdir(os.path.join(save_dir, task_name)):
