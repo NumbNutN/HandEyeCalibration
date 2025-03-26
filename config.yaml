@@ -1,0 +1,28 @@
+###########################
+###       camera        ###
+###########################
+
+square_size: 0.025
+chessboard_size: [7, 5]
+
+# camera intrinsic parameters
+intrinsic_matrix: 
+  [ 557.57064146, 0.0, 319.70807769, 
+    0.0, 570.74842256, 256.88573601, 
+    0.0, 0.0, 1.0 ]
+
+distortion_coefficients: 
+  [ 0.24797049, -0.59916451,  0.01111551, -0.01739046,  0.65944712 ]
+
+
+
+
+
+
+###########################
+### Forward Kinedynamic ###
+###########################
+
+ARX_API_EULER_ANGLE_CONVENTION: "szyx"
+
+
