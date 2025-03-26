@@ -172,7 +172,7 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
     return gripper2base,tar2cam,mtx,dist
 
 
-def hand_eye_calibration(gripper2base, target2cam):
+def calibration(gripper2base, target2cam):
     # compute relative transforms
     # gripper2base = compute_relative_transforms(gripper_poses)
     # target2cam = compute_relative_transforms(target_poses)
@@ -239,29 +239,29 @@ def main():
         ## Method 1   Modern Robotics Forward Kinematics ##
         ###################################################
 
-        # for i in range(len(qpos_list)):
+        for i in range(len(qpos_list)):
             
-        #     T = mr.FKinSpace(vx300s.M, vx300s.Slist, qpos_list[i][:6])
-        #     ee_poses.append(T)
+            T = mr.FKinSpace(vx300s.M, vx300s.Slist, qpos_list[i][:6])
+            ee_poses.append(T)
 
 
         ###################################################
         ## Method 2  ARX_R5_python Forward Kinematics    ##
         ###################################################
-        from ARX_R5_python.bimanual import tool_forward_kinematics
-        for i in range(len(qpos_list)):
+        # from ARX_R5_python.bimanual import tool_forward_kinematics
+        # for i in range(len(qpos_list)):
 
-            xyzrpy = tool_forward_kinematics(qpos_list[i])
-            T = np.eye(4)
-            T[:3, :3] = euler.euler2mat(xyzrpy[3], xyzrpy[4], xyzrpy[5], arx_euler_convention)
-            T[:3, 3] = xyzrpy[:3]
-            ee_poses.append(T)
+        #     xyzrpy = tool_forward_kinematics(qpos_list[i])
+        #     T = np.eye(4)
+        #     T[:3, :3] = euler.euler2mat(xyzrpy[3], xyzrpy[4], xyzrpy[5], arx_euler_convention)
+        #     T[:3, 3] = xyzrpy[:3]
+        #     ee_poses.append(T)
 
         
         #! WARN rotation definition
 
         g2bs,t2cs,mtx,dist  = get_poses(ee_poses, image_list, chessboard_size, square_size,mtx=mtx,dist=dist)
-        c2g = hand_eye_calibration(g2bs, t2cs)
+        c2g = calibration(g2bs, t2cs)
 
 
         ## show calibration info
