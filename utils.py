@@ -5,6 +5,11 @@ def DEBUG_PRINT(*args, **kwargs):
     with open("debug.log", "a") as f:
         print(*args, **kwargs, file=f)
 
+def HILIGHT_PRINT(*args, **kwargs):
+    print("\033[1;33m", end="")
+    print(*args, **kwargs)
+    print("\033[0m", end="")
+
         
 def unzip(images):
     images_list = []

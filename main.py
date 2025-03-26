@@ -49,7 +49,7 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
         'image': [],
     }
 
-    print("Reading data from hdf5 files...")
+    HILIGHT_PRINT("Reading data from hdf5 files...")
     
 
     # hdf5_files = [f for f in file_names if f.endswith('.hdf5')]
@@ -57,6 +57,7 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
 
 
     hdf5_files_sorted= ["episode_2.hdf5"]
+    HILIGHT_PRINT("read file:", hdf5_files_sorted)
 
     for file_name in hdf5_files_sorted:
         file_path = os.path.join(folder_path, file_name)
@@ -134,9 +135,9 @@ def detect_image_corners(image_list, chessboard_size=(7,5),square_size=0.025):
     return objps, imgps, skip_list
 
 
-def get_poses(gripper2base,image_list):
+def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mtx=None,dist=None):
 
-    objps, imgps, skip_list = detect_image_corners(image_list)
+    objps, imgps, skip_list = detect_image_corners(image_list,chessboard_size,square_size)
     print(f"Skip list: {skip_list}")
 
     if len(objps) == 0:
@@ -149,7 +150,10 @@ def get_poses(gripper2base,image_list):
     # intrinsic
 
     # !WARN what is imageSize
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objps, imgps, image_list[0].shape[1::-1], None, None)
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objps, imgps, image_list[0].shape[1::-1], cameraMatrix=mtx, distCoeffs=dist)
+
+    print("\nIntrinsic matrix:", mtx,sep="\n")
+    print("\nDistortion coefficients:", dist,sep=" ")
 
     # construct homogenous transformation matrix
     # !WARN  what is Rodrigues
@@ -165,7 +169,7 @@ def get_poses(gripper2base,image_list):
     # filter out the skipped images
     gripper2base = [gripper2base[i] for i in range(len(gripper2base)) if i not in skip_list]
 
-    return gripper2base,tar2cam
+    return gripper2base,tar2cam,mtx,dist
 
 
 def hand_eye_calibration(gripper2base, target2cam):
@@ -197,14 +201,33 @@ import modern_robotics as mr
 
 from visualizer import TrajectoryPlotter
 
+## Config
+
+from yaml import load, dump,Loader, Dumper
+import logging
+
+
 def main():
+
+    logging.basicConfig(level=logging.INFO)
 
     folder_path = "./data"
 
-    for idx in (0,199):
+    config = load(open('config.yaml'), Loader=Loader)
+
+    square_size = config['square_size']
+    chessboard_size = tuple(config['chessboard_size'])
+    mtx = np.array(config['intrinsic_matrix']).reshape(3,3)
+    dist = np.array(config['distortion_coefficients']).reshape(1,5)
+    arx_euler_convention = config['ARX_API_EULER_ANGLE_CONVENTION']
+
+    HILIGHT_PRINT("Config read...")
+
+
+    for idx in range(0,1):
 
         # sharp image has been excluded
-        info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+100))
+        info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
 
         qpos_list, image_list = info_dict['sim_qpos'], info_dict['image']
 
@@ -216,36 +239,46 @@ def main():
         ## Method 1   Modern Robotics Forward Kinematics ##
         ###################################################
 
-        for i in range(len(qpos_list)):
+        # for i in range(len(qpos_list)):
             
-            T = mr.FKinSpace(vx300s.M, vx300s.Slist, qpos_list[i][:6])
-            ee_poses.append(T)
+        #     T = mr.FKinSpace(vx300s.M, vx300s.Slist, qpos_list[i][:6])
+        #     ee_poses.append(T)
 
 
         ###################################################
         ## Method 2  ARX_R5_python Forward Kinematics    ##
         ###################################################
-        # from ARX_R5_python.bimanual import tool_forward_kinematics
-        # for i in range(len(qpos_list)):
+        from ARX_R5_python.bimanual import tool_forward_kinematics
+        for i in range(len(qpos_list)):
 
-        #     xyzrpy = tool_forward_kinematics(qpos_list[i])
-        #     T = np.eye(4)
-        #     T[:3, :3] = euler.euler2mat(xyzrpy[3], xyzrpy[4], xyzrpy[5], 'szyx')
-        #     T[:3, 3] = xyzrpy[:3]
-        #     ee_poses.append(T)
+            xyzrpy = tool_forward_kinematics(qpos_list[i])
+            T = np.eye(4)
+            T[:3, :3] = euler.euler2mat(xyzrpy[3], xyzrpy[4], xyzrpy[5], arx_euler_convention)
+            T[:3, 3] = xyzrpy[:3]
+            ee_poses.append(T)
 
         
         #! WARN rotation definition
 
-        g2bs,t2cs  = get_poses(ee_poses, image_list)
+        g2bs,t2cs,mtx,dist  = get_poses(ee_poses, image_list, chessboard_size, square_size,mtx=mtx,dist=dist)
         c2g = hand_eye_calibration(g2bs, t2cs)
 
 
-        print("Extrinsics",c2g)
+        ## show calibration info
+
+        HILIGHT_PRINT("\nExtrinsics",c2g)
         pos = c2g[0:3, 3]
         rot = quat.mat2quat(c2g[:3, :3])
         print(f'Position: {pos}')
         print(f'Rotation: {rot}')
+
+        ## Dump to yaml
+
+        config['intrinsic_matrix'] = mtx.tolist()
+        config['distortion_coefficients'] = dist.tolist()
+        config['extrinsics'] = c2g.tolist()
+        with open('config_gen.yaml', 'w') as f:
+            dump(config, f, Dumper=Dumper)
 
 
         ################################################
@@ -262,7 +295,6 @@ def main():
         plotter.draw_coordinate_axes(0,T_true, scale=0.1,label='Ground True')
         plotter.draw_coordinate_axes(1,c2g, scale=0.1,label='Estimated')
 
-        plt.show()
 
         ######################################
         ###    Visualize Trajectory        ###
