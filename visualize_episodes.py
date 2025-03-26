@@ -50,9 +50,17 @@ def main(args):
     dataset_name = f'episode_{episode_idx}'
 
     qpos, qvel, effort, action, base_action, image_dict = load_hdf5(os.path.join(dataset_dir, task_name), dataset_name)
+
+    print('hdf5 loaded!!')
     
     image_dict["cam_left_wrist"] = [draw_chessboard_corners(image) for image in image_dict["cam_left_wrist"]]
-    print('hdf5 loaded!!')
+
+    
+
+    # add index in image
+    for idx, image in enumerate(image_dict["cam_left_wrist"]):
+        image_dict["cam_left_wrist"][idx] = cv2.putText(image, str(idx), (10, 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    
 
     if not os.path.isdir(os.path.join(save_dir, task_name)):
         os.makedirs(os.path.join(save_dir, task_name))

@@ -118,6 +118,8 @@ def detect_image_corners(image_list, chessboard_size=(7,5),square_size=0.025):
         ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
         if ret:
             corners2 = cv2.cornerSubPix(gray, corners, (11,11), (-1,-1), (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
+
+            
             objp = np.zeros((chessboard_size[0]*chessboard_size[1],3), np.float32)
             objp[:,:2] = np.mgrid[0:chessboard_size[0],0:chessboard_size[1]].T.reshape(-1,2) * square_size
 
@@ -125,6 +127,17 @@ def detect_image_corners(image_list, chessboard_size=(7,5),square_size=0.025):
             DEBUG_PRINT(f"Image {idx} has chessboard corners detected")
             DEBUG_PRINT("objp", objp)
             DEBUG_PRINT("corners2", corners2)
+
+            #! WARNING the sequence of the corners will cause calibration error
+            ## keep the same sequence as objp
+            # calculate the cosine of the angle between the two vectors
+            v1 = (objp[1] - objp[0])[:2]
+            v2 = (corners2[1] - corners2[0])[0]
+            # print("shape",v1.shape,v2.shape)
+            cos = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+            if(cos < 0):
+                corners2 = np.flip(corners2, axis=0)
+                
 
             objps.append(objp)
             imgps.append(corners2)
@@ -134,8 +147,11 @@ def detect_image_corners(image_list, chessboard_size=(7,5),square_size=0.025):
 
     return objps, imgps, skip_list
 
-
+import time
 def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mtx=None,dist=None):
+
+    HILIGHT_PRINT("start Calibration...")
+    start = time.time()
 
     objps, imgps, skip_list = detect_image_corners(image_list,chessboard_size,square_size)
     print(f"Skip list: {skip_list}")
@@ -146,6 +162,8 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
 
     objps = np.array(objps)
     imgps = np.array(imgps)
+
+    HILIGHT_PRINT("end Corner detection, time:", time.time()-start)
 
     # intrinsic
 
@@ -227,7 +245,8 @@ def main():
     for idx in range(0,1):
 
         # sharp image has been excluded
-        info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
+        # info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
+        info_dict = read_data_from_hdf5(folder_path, 'left', range(0,400))
 
         qpos_list, image_list = info_dict['sim_qpos'], info_dict['image']
 
@@ -239,29 +258,53 @@ def main():
         ## Method 1   Modern Robotics Forward Kinematics ##
         ###################################################
 
-        for i in range(len(qpos_list)):
+        # for i in range(len(qpos_list)):
             
-            T = mr.FKinSpace(vx300s.M, vx300s.Slist, qpos_list[i][:6])
-            ee_poses.append(T)
+        #     T = mr.FKinSpace(vx300s.M, vx300s.Slist, qpos_list[i][:6])
+        #     ee_poses.append(T)
 
 
         ###################################################
         ## Method 2  ARX_R5_python Forward Kinematics    ##
         ###################################################
-        # from ARX_R5_python.bimanual import tool_forward_kinematics
-        # for i in range(len(qpos_list)):
+        from ARX_R5_python.bimanual import tool_forward_kinematics
+        for i in range(len(qpos_list)):
 
-        #     xyzrpy = tool_forward_kinematics(qpos_list[i])
-        #     T = np.eye(4)
-        #     T[:3, :3] = euler.euler2mat(xyzrpy[3], xyzrpy[4], xyzrpy[5], arx_euler_convention)
-        #     T[:3, 3] = xyzrpy[:3]
-        #     ee_poses.append(T)
+            xyzrpy = tool_forward_kinematics(qpos_list[i])
+            T = np.eye(4)
+            T[:3, :3] = euler.euler2mat(xyzrpy[3], xyzrpy[4], xyzrpy[5], arx_euler_convention)
+            T[:3, 3] = xyzrpy[:3]
+            ee_poses.append(T)
 
         
         #! WARN rotation definition
 
         g2bs,t2cs,mtx,dist  = get_poses(ee_poses, image_list, chessboard_size, square_size,mtx=mtx,dist=dist)
+
+
+        ######################################
+        ###    Visualize Trajectory        ###
+        ######################################
+    
+        plotter = TrajectoryPlotter()
+
+        ## DEBUG
+        
+        t2b = np.eye(4) # give a guess target 2 base
+        c2bs = [t2b @ np.linalg.inv(t2c) for t2c in t2cs]
+
+        for i in range(len(c2bs)):
+
+            # plotter.update_trajectory(1, g2bs[i], label='Gripper')            
+            plotter.update_trajectory(1, c2bs[i], label='Camera')
+
+            time.sleep(0.1)  # 模拟实时更新
+
+
         c2g = calibration(g2bs, t2cs)
+
+        c2bs = [np.dot(c2g, g2b) for g2b in g2bs]
+
 
 
         ## show calibration info
@@ -291,23 +334,11 @@ def main():
         T_true[:3,:3] = quat.quat2mat(rot_true)
         T_true[:3, 3] = pos_true
 
-        plotter = TrajectoryPlotter()
         plotter.draw_coordinate_axes(0,T_true, scale=0.1,label='Ground True')
         plotter.draw_coordinate_axes(1,c2g, scale=0.1,label='Estimated')
 
 
-        ######################################
-        ###    Visualize Trajectory        ###
-        ######################################
-        c2bs = [np.dot(c2g, g2b) for g2b in g2bs]
 
-        for i in range(len(g2bs)):
-
-            plotter.update_trajectory(1, g2bs[i], label='Gripper')
-            plotter.update_trajectory(2, c2bs[i], label='Camera')
-            # plotter.update_trajectory(2, t2cs[i], label='Target')
-
-            time.sleep(0.1)  # 模拟实时更新
 
     plt.show()
 

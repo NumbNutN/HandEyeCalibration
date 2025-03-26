@@ -27,12 +27,22 @@ def check_image_sharpness(image):
     
     return variance_of_laplacian
 
-def draw_chessboard_corners(image):
+def draw_chessboard_corners(image,chessboard_size = (7,5), square_size = 0.025):
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     ret, corners = cv2.findChessboardCorners(gray, (7,5), None)
 
     if ret:
+        
+        objp = np.zeros((chessboard_size[0]*chessboard_size[1],3), np.float32)
+        objp[:,:2] = np.mgrid[0:chessboard_size[0],0:chessboard_size[1]].T.reshape(-1,2) * square_size
         corners2 = cv2.cornerSubPix(gray, corners, (11,11), (-1,-1), (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
+        v1 = (objp[1] - objp[0])[:2]
+        v2 = (corners2[1] - corners2[0])[0]
+        # print("shape",v1.shape,v2.shape)
+        cos = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+        if(cos < 0):
+            corners2 = np.flip(corners2, axis=0)
+
         image = cv2.drawChessboardCorners(image, (7,5), corners2, ret)
     return image
