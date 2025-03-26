@@ -197,7 +197,6 @@ import time
 from matplotlib import pyplot as plt
 import transforms3d.quaternions as quat
 import transforms3d.euler as euler
-import modern_robotics as mr
 
 from visualizer import TrajectoryPlotter
 
@@ -205,6 +204,7 @@ from visualizer import TrajectoryPlotter
 
 from yaml import load, dump,Loader, Dumper
 import logging
+import mplib
 
 
 def main():
@@ -223,6 +223,12 @@ def main():
 
     HILIGHT_PRINT("Config read...")
 
+    planner = mplib.Planner(
+        urdf="aloha/arx5_description_isaac_colored.urdf",
+        srdf="aloha/arx5_description_isaac_colored.srdf",
+        move_group="fl_link6",
+    )
+    initial_qpos = planner.robot.get_qpos()
 
     for idx in range(0,1):
 
@@ -232,31 +238,12 @@ def main():
         qpos_list, image_list = info_dict['sim_qpos'], info_dict['image']
 
         ee_poses = []
-
-        #! WARN do qpos need a bias?
-
-        ###################################################
-        ## Method 1   Modern Robotics Forward Kinematics ##
-        ###################################################
-
-        for i in range(len(qpos_list)):
-            
-            T = mr.FKinSpace(vx300s.M, vx300s.Slist, qpos_list[i][:6])
-            ee_poses.append(T)
-
-
-        ###################################################
-        ## Method 2  ARX_R5_python Forward Kinematics    ##
-        ###################################################
-        # from ARX_R5_python.bimanual import tool_forward_kinematics
-        # for i in range(len(qpos_list)):
-
-        #     xyzrpy = tool_forward_kinematics(qpos_list[i])
-        #     T = np.eye(4)
-        #     T[:3, :3] = euler.euler2mat(xyzrpy[3], xyzrpy[4], xyzrpy[5], arx_euler_convention)
-        #     T[:3, 3] = xyzrpy[:3]
-        #     ee_poses.append(T)
-
+        for qpos in qpos_list:
+            all_qpos = initial_qpos.copy()
+            all_qpos[planner.move_group_joint_indices] = qpos[:-1] # without gripper
+            planner.pinocchio_model.compute_forward_kinematics(all_qpos)
+            ee_pose = planner.pinocchio_model.get_link_pose(planner.move_group_link_id)
+            ee_poses.append(ee_pose.to_transformation_matrix())
         
         #! WARN rotation definition
 
