@@ -75,12 +75,12 @@ class TrajectoryPlotter:
                                                                     color=self.colors[point_id % len(self.colors)], marker='o')
         
         # self.trajectories[point_id]['axis'][0].remove()  # 移除之前的坐标轴
-        for j in range(3):
-            start = self.trajectories[point_id]['T'][-1][:3, 3]
-            end = start + scale * self.trajectories[point_id]['T'][-1][:3, j]
+        # for j in range(3):
+        #     start = self.trajectories[point_id]['T'][-1][:3, 3]
+        #     end = start + scale * self.trajectories[point_id]['T'][-1][:3, j]
 
-            self.trajectories[point_id]['axis'] = self.ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]],
-                            color=self.axis_colors[j], linewidth=2)
+        #     self.trajectories[point_id]['axis'] = self.ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]],
+        #                     color=self.axis_colors[j], linewidth=2)
 
     
             
@@ -135,7 +135,7 @@ class TrajectoryPlotter:
         image = cv2.drawChessboardCorners(image, (7, 5), corners, True)
 
         # resize image to lower resolution for better visualization
-        image = cv2.resize(image, (128, 96))
+        # image = cv2.resize(image, (128, 96))
         if(id == 1):
             self.ax_img1.imshow(image)
         elif(id == 2):

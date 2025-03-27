@@ -2,7 +2,7 @@
 ###       camera        ###
 ###########################
 
-square_size: 0.025
+square_size: 0.033
 chessboard_size: [7, 5]
 
 # camera intrinsic parameters

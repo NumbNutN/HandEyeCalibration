@@ -275,7 +275,7 @@ def main():
 
         # sharp image has been excluded
         # info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
-        info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(10,idx,idx+400))
+        info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
 
         qpos_list, image_list = info_dict['sim_qpos'], info_dict['image']
 
@@ -298,25 +298,22 @@ def main():
     
         plotter = TrajectoryPlotter()
 
-        ## DEBUG
-        
-        t2b = np.eye(4) # give a guess target 2 base
-        c2bs = [t2b @ np.linalg.inv(t2c) for t2c in t2cs]
+
+        c2g = calibration(g2bs, t2cs)
+        c2bs = [np.dot(g2b, c2g) for g2b in g2bs]
+        t2bs = [np.dot(c2b, t2c) for t2c, c2b in zip(t2cs, c2bs)]
 
         for i in range(len(c2bs)):
 
             plotter.update_trajectory(1, g2bs[i], label='Gripper')            
-            plotter.update_trajectory(2, c2bs[i], label='Camera')
+            plotter.update_trajectory(2, c2bs[i], label='Camera')  
+            plotter.update_trajectory(3, t2bs[i], label='Target')
             plotter.draw_image_and_chessboard_corners(1, images[i], imgps[i])
             plotter.draw_image_and_chessboard_corners(2, images[i], imgps_reproject[i])
             HILIGHT_PRINT(f"Image {i} re-projection error: {errors[i]:.4f}")
 
             # time.sleep(0.1)  # 模拟实时更新
             plotter.update()
-
-
-        c2g = calibration(g2bs, t2cs)
-        c2bs = [np.dot(c2g, g2b) for g2b in g2bs]
 
         ## show calibration info
 
