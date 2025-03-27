@@ -52,11 +52,11 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
     HILIGHT_PRINT("Reading data from hdf5 files...")
     
 
-    # hdf5_files = [f for f in file_names if f.endswith('.hdf5')]
-    # hdf5_files_sorted = sorted(hdf5_files, key=lambda x: int(re.search(r'episode_(\d+).hdf5', x).group(1)))
+    hdf5_files = [f for f in file_names if f.endswith('.hdf5')]
+    hdf5_files_sorted = sorted(hdf5_files, key=lambda x: int(re.search(r'episode_(\d+).hdf5', x).group(1)))
 
 
-    hdf5_files_sorted= ["episode_2.hdf5"]
+    # hdf5_files_sorted= ["episode_2.hdf5"]
     HILIGHT_PRINT("read file:", hdf5_files_sorted)
 
     for file_name in hdf5_files_sorted:
@@ -93,13 +93,12 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
                 sharpness = check_image_sharpness(image)
                 # print(sharpness)
                 if sharpness < 600:
-                    # continue
+                    continue
                     pass 
                 else:
+                    hdf5_data['sim_qpos'].append(qpos)
+                    hdf5_data['image'].append(image)
                     pass
-
-                hdf5_data['sim_qpos'].append(qpos)
-                hdf5_data['image'].append(image)
     
     print(f"actual qpos number: {len(hdf5_data['image'])}")
     return hdf5_data # len == 20
@@ -272,7 +271,7 @@ def main():
 
         # sharp image has been excluded
         # info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
-        info_dict = read_data_from_hdf5(folder_path, 'left', range(0,100))
+        info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(10,idx,idx+400))
 
         qpos_list, image_list = info_dict['sim_qpos'], info_dict['image']
 
@@ -309,7 +308,7 @@ def main():
             HILIGHT_PRINT(f"Image {i} re-projection error: {errors[i]:.4f}")
 
             # time.sleep(0.1)  # 模拟实时更新
-            plt.pause(0.01)
+            plotter.update()
 
 
         c2g = calibration(g2bs, t2cs)
@@ -344,9 +343,6 @@ def main():
 
         plotter.draw_coordinate_axes(0,T_true, scale=0.1,label='Ground True')
         plotter.draw_coordinate_axes(1,c2g, scale=0.1,label='Estimated')
-
-
-
 
     plt.show()
 
