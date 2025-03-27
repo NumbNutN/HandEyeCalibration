@@ -27,7 +27,7 @@ class TrajectoryPlotter:
         self.ax_pose.set_title('3D Coordinate Axes')
 
 
-    def update_trajectory(self, point_id, T, label=None):
+    def update_trajectory(self, point_id, T, label=None,scale=0.05):
         """
         更新质点的轨迹
         :param point_id: 质点的唯一标识
@@ -38,8 +38,7 @@ class TrajectoryPlotter:
             self.traj_labels[point_id] = label
 
         # 提取平移部分（X, Y, Z）
-        position = T[:3, 3]
-        self.trajectories[point_id].append(position)
+        self.trajectories[point_id].append(T)
 
         # 清除并重绘
         self.ax.clear()
@@ -50,11 +49,19 @@ class TrajectoryPlotter:
 
         # 绘制所有质点轨迹
         for i, (pid, traj) in enumerate(self.trajectories.items()):
-            traj = np.array(traj)
+            trans = np.array(traj)[:, :3, 3]  # 提取平移部分
             color = self.colors[i % len(self.colors)]  # 轮询颜色
-            self.ax.plot(traj[:, 0], traj[:, 1], traj[:, 2], color=color, label=self.traj_labels
+            self.ax.plot(trans[:, 0], trans[:, 1], trans[:, 2], color=color, label=self.traj_labels
                                                                                 [pid] if self.traj_labels[pid] is not None else f'Point {pid}')
-            self.ax.scatter(traj[-1, 0], traj[-1, 1], traj[-1, 2], color=color, marker='o')
+            self.ax.scatter(trans[-1, 0], trans[-1, 1], trans[-1, 2], color=color, marker='o')
+
+            # print(f' idx {i} Point {pid} Position: {traj}')
+
+            for j in range(3):
+                start = traj[-1][:3, 3]
+                end = start + scale * traj[-1][:3, j]
+                self.ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]],
+                            color=self.axis_colors[j], linewidth=2)
 
         self.ax.legend()
         plt.pause(0.1)  # 短暂停止以更新图像
