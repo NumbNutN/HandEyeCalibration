@@ -167,8 +167,25 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
 
     # intrinsic
 
-    # !WARN what is imageSize
+    # store privious intrinsic matrix and distortion coefficients
+    mtx_prev = mtx
+    dist_prev = dist
+
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objps, imgps, image_list[0].shape[1::-1], cameraMatrix=mtx, distCoeffs=dist)
+
+    # calculate re-projection error
+    mean_error = 0
+    errors = []
+    imgps_reproject = []
+    for i in range(len(objps)):
+        imgpoints2, _ = cv2.projectPoints(objps[i], rvecs[i], tvecs[i], mtx_prev, dist_prev)
+        imgps_reproject.append(imgpoints2)
+        error = cv2.norm(imgps[i], imgpoints2, cv2.NORM_L2)/len(imgpoints2)
+        mean_error += error
+        errors.append(error)
+
+    mean_error /= len(objps)
+    print(f"Total re-projection error: {mean_error:.4f}")
 
     print("\nIntrinsic matrix:", mtx,sep="\n")
     print("\nDistortion coefficients:", dist,sep=" ")
@@ -187,7 +204,10 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
     # filter out the skipped images
     gripper2base = [gripper2base[i] for i in range(len(gripper2base)) if i not in skip_list]
 
-    return gripper2base,tar2cam,mtx,dist
+    # return filter image list
+    images = [image_list[i] for i in range(len(image_list)) if i not in skip_list]
+
+    return gripper2base,tar2cam,mtx,dist,images,imgps,imgps_reproject,errors
 
 
 def calibration(gripper2base, target2cam):
@@ -252,7 +272,7 @@ def main():
 
         # sharp image has been excluded
         # info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
-        info_dict = read_data_from_hdf5(folder_path, 'left', range(0,400))
+        info_dict = read_data_from_hdf5(folder_path, 'left', range(0,100))
 
         qpos_list, image_list = info_dict['sim_qpos'], info_dict['image']
 
@@ -266,7 +286,7 @@ def main():
         
         #! WARN rotation definition
 
-        g2bs,t2cs,mtx,dist  = get_poses(ee_poses, image_list, chessboard_size, square_size,mtx=mtx,dist=dist)
+        g2bs,t2cs,mtx,dist,images, imgps,imgps_reproject,errors  = get_poses(ee_poses, image_list, chessboard_size, square_size,mtx=mtx,dist=dist)
 
 
         ######################################
@@ -282,17 +302,18 @@ def main():
 
         for i in range(len(c2bs)):
 
-            # plotter.update_trajectory(1, g2bs[i], label='Gripper')            
-            plotter.update_trajectory(1, c2bs[i], label='Camera')
+            plotter.update_trajectory(1, g2bs[i], label='Gripper')            
+            plotter.update_trajectory(2, c2bs[i], label='Camera')
+            plotter.draw_image_and_chessboard_corners(1, images[i], imgps[i])
+            plotter.draw_image_and_chessboard_corners(2, images[i], imgps_reproject[i])
+            HILIGHT_PRINT(f"Image {i} re-projection error: {errors[i]:.4f}")
 
-            time.sleep(0.1)  # 模拟实时更新
+            # time.sleep(0.1)  # 模拟实时更新
+            plt.pause(0.01)
 
 
         c2g = calibration(g2bs, t2cs)
-
         c2bs = [np.dot(c2g, g2b) for g2b in g2bs]
-
-
 
         ## show calibration info
 

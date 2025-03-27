@@ -4,9 +4,15 @@ from mpl_toolkits.mplot3d import Axes3D
 
 class TrajectoryPlotter:
     def __init__(self):
-        self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(211, projection='3d')
-        self.ax_pose = self.fig.add_subplot(212, projection='3d')
+        self.fig = plt.figure(figsize=(10, 8))
+        self.ax = self.fig.add_subplot(221, projection='3d')
+        
+
+        self.ax_img1 = self.fig.add_subplot(223)
+        self.ax_img1.set_title("Detect Corners")
+        self.ax_img2 = self.fig.add_subplot(224)
+        self.ax_img2.set_title("reProject Corners")
+        
 
         self.trajectories = {}  # 存储多个质点的轨迹
         self.traj_labels = {}
@@ -21,6 +27,7 @@ class TrajectoryPlotter:
         self.ax.set_zlabel('Z')
         self.ax.set_title('3D Motion Trajectories')
 
+        self.ax_pose = self.fig.add_subplot(222, projection='3d')
         self.ax_pose.set_xlabel('X')
         self.ax_pose.set_ylabel('Y')
         self.ax_pose.set_zlabel('Z')
@@ -64,7 +71,6 @@ class TrajectoryPlotter:
                             color=self.axis_colors[j], linewidth=2)
 
         self.ax.legend()
-        plt.pause(0.1)  # 短暂停止以更新图像
 
 
     def draw_coordinate_axes(self, point_id, T, label=None,scale=1.0):
@@ -92,7 +98,20 @@ class TrajectoryPlotter:
                         color=self.axis_colors[i+point_id*3], linewidth=2, label=self.pose_labels[point_id] if ((self.pose_labels[point_id] is not None) and i == 0) else f'')
             
         self.ax_pose.legend()
-        plt.pause(0.1)  # 短暂停止以更新图像
+
+    def draw_image_and_chessboard_corners(self, id,image, corners):
+        """
+        """
+        import cv2
+        image = cv2.drawChessboardCorners(image, (7, 5), corners, True)
+
+        # resize image to lower resolution for better visualization
+        image = cv2.resize(image, (128, 96))
+        if(id == 1):
+            self.ax_img1.imshow(image)
+        elif(id == 2):
+            self.ax_img2.imshow(image)
+
 
 # 示例使用
 if __name__ == "__main__":
