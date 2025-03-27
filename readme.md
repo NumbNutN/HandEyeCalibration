@@ -32,3 +32,9 @@ $$
 $$
 
 > [opencv - calibrateHandEye](https://docs.opencv.org/4.5.4/d9/d0c/group__calib3d.html#gaebfc1c9f7434196a374c382abf43439b)
+
+
+播放HDF5 an Example
+```
+python3 visualize_episodes.py --dataset_dir "data" --save_dir "visualize" --episode_idx "2" --task_name ""
+```

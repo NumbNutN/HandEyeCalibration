@@ -198,7 +198,11 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
         T[0:3, 0:3] = R
         T[0:3, 3] = tvec.flatten()
         # print("Target tvec:", tvec.flatten())
-        tar2cam.append(T)
+
+        # !WARN : in our pinhole camera frame ,x-axis is front, y-axis is left, z-axis is up
+        T_cam2ourcam = np.eye(4)
+        T_cam2ourcam[0:3, 0:3] = np.array([[0, 0, 1], [-1,0,0], [0, -1, 0]]) 
+        tar2cam.append(T_cam2ourcam @ T)
 
     # filter out the skipped images
     gripper2base = [gripper2base[i] for i in range(len(gripper2base)) if i not in skip_list]

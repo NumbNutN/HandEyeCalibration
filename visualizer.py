@@ -20,7 +20,7 @@ class TrajectoryPlotter:
         self.poses = {}  # 存储多个物体的位姿
         self.pose_labels = {}
         self.colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']  # 预定义颜色
-        self.axis_colors = ['r', 'g', 'b', 'm', 'y', 'k']  # X, Y, Z 轴颜色
+        self.axis_colors = ['r', 'g', 'b', '#FF9999', '#99FF99', '#9999FF']  # X, Y, Z 轴颜色
 
         self.ax.set_xlabel('X')
         self.ax.set_ylabel('Y')
@@ -34,11 +34,14 @@ class TrajectoryPlotter:
         self.ax_pose.set_title('3D Coordinate Axes')
 
         # 只更新变化的部分
-        self.fig.canvas.draw()
-        self.background = self.fig.canvas.copy_from_bbox(self.fig.bbox)
+        # self.fig.canvas.draw()
+        # self.background = self.fig.canvas.copy_from_bbox(self.fig.bbox)
+
+        # ax 自适应绘图
+        
 
 
-    def update_trajectory(self, point_id, T, label=None,scale=0.05):
+    def update_trajectory(self, point_id, T, label=None,scale=0.4):
         """
         更新质点的轨迹
         :param point_id: 质点的唯一标识
@@ -49,7 +52,8 @@ class TrajectoryPlotter:
                 'T': [],
                 'label': label,
                 'line3d': self.ax.plot([], [], [], color=self.colors[point_id % len(self.colors)], label=label),
-                'scatter3d': self.ax.scatter([], [], [], color=self.colors[point_id % len(self.colors)], marker='o')
+                'scatter3d': self.ax.scatter([], [], [], color=self.colors[point_id % len(self.colors)], marker='o'),
+                'axis': self.ax.plot([], [], [], color=self.axis_colors[point_id % len(self.axis_colors)], linewidth=2)
             }
 
         # 提取平移部分（X, Y, Z）
@@ -69,33 +73,31 @@ class TrajectoryPlotter:
         self.trajectories[point_id]['scatter3d'].remove()
         self.trajectories[point_id]['scatter3d'] = self.ax.scatter(pos_array[-1, 0], pos_array[-1, 1], pos_array[-1, 2],
                                                                     color=self.colors[point_id % len(self.colors)], marker='o')
-        self.ax.legend()
+        
+        # self.trajectories[point_id]['axis'][0].remove()  # 移除之前的坐标轴
+        for j in range(3):
+            start = self.trajectories[point_id]['T'][-1][:3, 3]
+            end = start + scale * self.trajectories[point_id]['T'][-1][:3, j]
 
-        # 绘制所有质点轨迹
-        # for i, (pid, traj) in enumerate(self.trajectories.items()):
-        #     trans = np.array(traj)[:, :3, 3]  # 提取平移部分
-        #     color = self.colors[i % len(self.colors)]  # 轮询颜色
-        #     self.ax.plot(trans[:, 0], trans[:, 1], trans[:, 2], color=color, label=self.traj_labels
-        #                                                                         [pid] if self.traj_labels[pid] is not None else f'Point {pid}')
-        #     self.ax.scatter(trans[-1, 0], trans[-1, 1], trans[-1, 2], color=color, marker='o')
+            self.trajectories[point_id]['axis'] = self.ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]],
+                            color=self.axis_colors[j], linewidth=2)
 
-            # print(f' idx {i} Point {pid} Position: {traj}')
-
-            # for j in range(3):
-            #     start = traj[-1][:3, 3]
-            #     end = start + scale * traj[-1][:3, j]
-            #     self.ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]],
-            #                 color=self.axis_colors[j], linewidth=2)
+    
+            
+        
 
     def update(self):
         # self.fig.canvas.restore_region(self.background)  # 恢复背景
 
-        # for point_id, traj in self.trajectories.items():
-        #     # 绘制轨迹
-        #     self.ax.draw_artist(traj['line3d'][0])
-        #     self.ax.draw_artist(traj['scatter3d'])
         
         # self.fig.canvas.blit(self.fig.bbox)  # 更新绘图区域
+
+        self.ax.relim()  # 重新计算数据范围
+        self.ax.autoscale_view()  # 让坐标轴根据数据范围自适应缩放
+        self.ax.legend()
+
+        # self.ax.set_xlim([-0.2, 0.2])
+
         plt.pause(0.001)  # 暂停以更新图形
 
 
