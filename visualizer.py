@@ -134,11 +134,11 @@ class TrajectoryPlotter:
         import cv2
         image = cv2.drawChessboardCorners(image, (7, 5), corners, True)
 
-        # resize image to lower resolution for better visualization
-        # image = cv2.resize(image, (128, 96))
         if(id == 1):
+            self.ax_img1.cla()
             self.ax_img1.imshow(image)
         elif(id == 2):
+            self.ax_img2.cla()
             self.ax_img2.imshow(image)
 
 # 示例使用

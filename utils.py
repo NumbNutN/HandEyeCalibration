@@ -47,3 +47,7 @@ def draw_chessboard_corners(image,chessboard_size = (7,5), square_size = 0.025):
 
         image = cv2.drawChessboardCorners(image, (7,5), corners2, ret)
     return image
+
+
+class logger:
+    pass 

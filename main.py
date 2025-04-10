@@ -7,29 +7,6 @@ import re
 from utils import *
 
 
-#! LEFT or RIGHT
-class vx300s:
-    Slist = np.array(
-        [
-            [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, -0.12705, 0.0, 0.0],
-            [0.0, 1.0, 0.0, -0.42705, 0.0, 0.05955],
-            [1.0, 0.0, 0.0, 0.0, 0.42705, 0.0],
-            [0.0, 1.0, 0.0, -0.42705, 0.0, 0.35955],
-            [1.0, 0.0, 0.0, 0.0, 0.42705, 0.0],
-        ]
-    ).T
-
-    M = np.array(
-        [
-            [1.0, 0.0, 0.0, 0.536494],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.42705],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    )
-
-
 def generate_arithmetic_sequence(num_items,begin = 0,end = 199):
     if num_items <= 0:
         return []
@@ -62,7 +39,9 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
     for file_name in hdf5_files_sorted:
         file_path = os.path.join(folder_path, file_name)
         with h5py.File(file_path, 'r') as file:
-            # print(list(file.keys()))  # 打印['action', 'base_action', 'observations']
+
+            
+            print(list(file.keys()))  # 打印['action', 'base_action', 'observations']
             
             observations = file["observations"]
             
@@ -74,9 +53,9 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
             else: # cam_right_wrist
                 images_list = unzip(observations['images']['cam_right_wrist'])
 
-            print("total qpos number:", len(images_list))
+            print(f"total qpos number in {file_name} :", len(images_list))
             print("sample number:", len(index_list))
-                
+
             for index in index_list:
                 qpos = qpos_list[index, :]
                     # Extract the gripper qpos values from the 7th column
@@ -92,13 +71,11 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
                 # 检查image清晰度
                 sharpness = check_image_sharpness(image)
                 # print(sharpness)
-                if sharpness < 600:
+                if sharpness < 400:
                     continue
-                    pass 
                 else:
                     hdf5_data['sim_qpos'].append(qpos)
                     hdf5_data['image'].append(image)
-                    pass
     
     print(f"actual qpos number: {len(hdf5_data['image'])}")
     return hdf5_data # len == 20
@@ -123,9 +100,9 @@ def detect_image_corners(image_list, chessboard_size=(7,5),square_size=0.025):
             objp[:,:2] = np.mgrid[0:chessboard_size[0],0:chessboard_size[1]].T.reshape(-1,2) * square_size
 
             ## DEBUG
-            DEBUG_PRINT(f"Image {idx} has chessboard corners detected")
-            DEBUG_PRINT("objp", objp)
-            DEBUG_PRINT("corners2", corners2)
+            # DEBUG_PRINT(f"Image {idx} has chessboard corners detected")
+            # DEBUG_PRINT("objp", objp)
+            # DEBUG_PRINT("corners2", corners2)
 
             #! WARNING the sequence of the corners will cause calibration error
             ## keep the same sequence as objp
@@ -141,15 +118,36 @@ def detect_image_corners(image_list, chessboard_size=(7,5),square_size=0.025):
             objps.append(objp)
             imgps.append(corners2)
         else:
-            print(f"Image {idx} has no chessboard corners detected")
+            # print(f"Image {idx} has no chessboard corners detected")
             skip_list.append(idx)
 
     return objps, imgps, skip_list
 
+def calculate_reprojection_error(objps,imgps,rvecs,tvecs,mtx,dist,log=True):
+
+    # calculate re-projection error
+    HILIGHT_PRINT("Calculating re-projection error ...")
+    mean_error = 0
+    errors = []
+    imgps_reproject = []
+    for i in range(len(objps)):
+        imgpoints2, _ = cv2.projectPoints(objps[i], rvecs[i], tvecs[i], mtx, dist)
+        imgps_reproject.append(imgpoints2)
+        error = cv2.norm(imgps[i], imgpoints2, cv2.NORM_L2)/len(imgpoints2)
+        # print(f"image{i} with error {error}")
+        mean_error += error
+        errors.append(error)
+
+    mean_error /= len(objps)
+    print(f"Total re-projection error: {mean_error:.4f}")
+
+    return imgps_reproject,errors
+
+
 import time
 def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mtx=None,dist=None):
 
-    HILIGHT_PRINT("start Calibration...")
+    HILIGHT_PRINT("Detecting Chessboard Corner ...")
     start = time.time()
 
     objps, imgps, skip_list = detect_image_corners(image_list,chessboard_size,square_size)
@@ -159,32 +157,22 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
         print("No chessboard corners detected in the images")
         return None
 
-    objps = np.array(objps)
-    imgps = np.array(imgps)
 
     HILIGHT_PRINT("end Corner detection, time:", time.time()-start)
 
-    # intrinsic
+    objps = np.array(objps)
+    imgps = np.array(imgps)
 
     # store privious intrinsic matrix and distortion coefficients
     mtx_prev = mtx
     dist_prev = dist
 
+    HILIGHT_PRINT("Calibrating camera ...")
+    start = time.time()
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objps, imgps, image_list[0].shape[1::-1], cameraMatrix=mtx, distCoeffs=dist)
+    HILIGHT_PRINT("end camera calibration, time:", time.time()-start)
 
-    # calculate re-projection error
-    mean_error = 0
-    errors = []
-    imgps_reproject = []
-    for i in range(len(objps)):
-        imgpoints2, _ = cv2.projectPoints(objps[i], rvecs[i], tvecs[i], mtx_prev, dist_prev)
-        imgps_reproject.append(imgpoints2)
-        error = cv2.norm(imgps[i], imgpoints2, cv2.NORM_L2)/len(imgpoints2)
-        mean_error += error
-        errors.append(error)
-
-    mean_error /= len(objps)
-    print(f"Total re-projection error: {mean_error:.4f}")
+    imgps_reproject,errors = calculate_reprojection_error(objps,imgps,rvecs,tvecs,mtx,dist)
 
     print("\nIntrinsic matrix:", mtx,sep="\n")
     print("\nDistortion coefficients:", dist,sep=" ")
@@ -213,10 +201,12 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
     return gripper2base,tar2cam,mtx,dist,images,imgps,imgps_reproject,errors
 
 
+
 def calibration(gripper2base, target2cam):
-    # compute relative transforms
-    # gripper2base = compute_relative_transforms(gripper_poses)
-    # target2cam = compute_relative_transforms(target_poses)
+
+    '''
+        This is for Eye in Hand Pattern
+    '''
 
     R_gripper2base = [T[0:3, 0:3] for T in gripper2base]
     R_target2cam = [T[0:3, 0:3] for T in target2cam]
@@ -234,10 +224,31 @@ def calibration(gripper2base, target2cam):
     return T_cam2gripper
 
 
+def calibration_eye2hand(g2bs,t2cs):
+
+    '''
+        This is for Eye to Hand Pattern
+    '''
+    b2gs = [g2b.T for g2b in g2bs]
+    R_b2g = [T[0:3, 0:3] for T in b2gs]
+    R_t2c = [T[0:3, 0:3] for T in t2cs]
+    t_b2g = [T[0:3, 3] for T in b2gs]
+    t_t2c = [T[0:3, 3] for T in t2cs]
+
+    # hand-eye calibration
+    R_c2b, t_c2b = cv2.calibrateHandEye(R_b2g, t_b2g, R_t2c, t_t2c, method=cv2.CALIB_HAND_EYE_PARK)
+
+    T_c2b = np.eye(4)
+    T_c2b[:3,:3] = R_c2b
+    T_c2b[:3,3] = t_c2b.flatten()
+
+    return  T_c2b
+
 import time
 from matplotlib import pyplot as plt
 import transforms3d.quaternions as quat
 import transforms3d.euler as euler
+import mplib
 
 from visualizer import TrajectoryPlotter
 
@@ -245,25 +256,25 @@ from visualizer import TrajectoryPlotter
 
 from yaml import load, dump,Loader, Dumper
 import logging
-import mplib
 
 
 def main():
 
     logging.basicConfig(level=logging.INFO)
 
-    folder_path = "./data"
+    folder_path = "./data/new"
 
+    HILIGHT_PRINT("Read config...")
     config = load(open('config.yaml'), Loader=Loader)
 
+    mode = config['pattern']
     square_size = config['square_size']
     chessboard_size = tuple(config['chessboard_size'])
-    mtx = np.array(config['intrinsic_matrix']).reshape(3,3)
-    dist = np.array(config['distortion_coefficients']).reshape(1,5)
-    arx_euler_convention = config['ARX_API_EULER_ANGLE_CONVENTION']
+    mtx_initial = np.array(config['intrinsic_matrix']).reshape(3,3)
+    dist_initial = np.array(config['distortion_coefficients']).reshape(1,5)
 
-    HILIGHT_PRINT("Config read...")
 
+    HILIGHT_PRINT("Forward Kinematics...")
     planner = mplib.Planner(
         urdf="aloha/arx5_description_isaac_colored.urdf",
         srdf="aloha/arx5_description_isaac_colored.srdf",
@@ -275,7 +286,8 @@ def main():
 
         # sharp image has been excluded
         # info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
-        info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
+        print("select:",np.linspace(0, 33, 33, endpoint=False, dtype=int))
+        info_dict = read_data_from_hdf5(folder_path, 'left', np.linspace(0, 23, 24, endpoint=False, dtype=int))
 
         qpos_list, image_list = info_dict['sim_qpos'], info_dict['image']
 
@@ -289,63 +301,136 @@ def main():
         
         #! WARN rotation definition
 
-        g2bs,t2cs,mtx,dist,images, imgps,imgps_reproject,errors  = get_poses(ee_poses, image_list, chessboard_size, square_size,mtx=mtx,dist=dist)
+        g2bs,t2cs,mtx_initial,dist_initial,images, imgps,imgps_reproject,errors  = get_poses(ee_poses, image_list, chessboard_size, square_size,mtx=mtx_initial,dist=dist_initial)
 
-
-        ######################################
-        ###    Visualize Trajectory        ###
-        ######################################
-    
         plotter = TrajectoryPlotter()
+        if mode == 'eye-in-hand':
+            c2g = calibration(g2bs, t2cs)
+
+            ###########################
+            ### write ground truth  ###
+            ###########################
+            # c2g = np.eye(4)
+            # euler2 = np.deg2rad([-1, 30, 4])
+            # c2g[0:3, 0:3] = quat.quat2mat(
+            #     euler.euler2quat(euler2[0],euler2[1],euler2[2], 'sxyz') # rotation
+            # )
+            # c2g[0:3, 3] = np.array([0.07 , -0.01 , 0.095])
 
 
-        c2g = calibration(g2bs, t2cs)
-        c2bs = [np.dot(g2b, c2g) for g2b in g2bs]
-        t2bs = [np.dot(c2b, t2c) for t2c, c2b in zip(t2cs, c2bs)]
+            ###########################
+            c2bs = [g2b @ c2g for g2b in g2bs]
+            t2bs = [c2b @ t2c for t2c, c2b in zip(t2cs, c2bs)]
+            res = c2g
 
-        for i in range(len(c2bs)):
 
-            plotter.update_trajectory(1, g2bs[i], label='Gripper')            
-            plotter.update_trajectory(2, c2bs[i], label='Camera')  
-            plotter.update_trajectory(3, t2bs[i], label='Target')
-            plotter.draw_image_and_chessboard_corners(1, images[i], imgps[i])
-            plotter.draw_image_and_chessboard_corners(2, images[i], imgps_reproject[i])
-            HILIGHT_PRINT(f"Image {i} re-projection error: {errors[i]:.4f}")
+            ## show calibration info
+            HILIGHT_PRINT("\nExtrinsics",res)
+            pos = res[0:3, 3]
+            rot = quat.mat2quat(res[:3, :3])
+            print(f'Position: {pos}')
+            print(f'Rotation: {rot}')
 
-            # time.sleep(0.1)  # 模拟实时更新
-            plotter.update()
+            # to euler angle
+            euler2 = euler.quat2euler(rot,'sxyz')
+            # to degree
+            euler2 = np.rad2deg(euler2)
+            print(f'Euler: {euler2}')
 
-        ## show calibration info
+            # calculate the variance of target position
+            target_pos = np.array([t2b[0:3, 3] for t2b in t2bs])
+            target_pos_var = np.var(target_pos, axis=0)
+            print(f"Target Position Variance: {target_pos_var}")
 
-        HILIGHT_PRINT("\nExtrinsics",c2g)
-        pos = c2g[0:3, 3]
-        rot = quat.mat2quat(c2g[:3, :3])
-        print(f'Position: {pos}')
-        print(f'Rotation: {rot}')
+            ### bounding box
+            rot_true = np.array([0.9820343852043152, 0.0042511820793151855, 0.18733306229114532, 0.022285446524620056])
+            euler2 = np.rad2deg(euler.quat2euler(rot_true,'sxyz'))
+            pos_true = np.array([0.0382, -0.018, 0.10315])
+            print("bounding box:",euler2)
+
+            ######################################
+            ###    Visualize Trajectory        ###
+            ######################################
+
+            for i in range(len(c2bs)):
+                
+                # count time in the loop
+                start = time.time()
+                plotter.update_trajectory(1, g2bs[i], label='Gripper')            
+                plotter.update_trajectory(2, c2bs[i], label='Camera')  
+                plotter.update_trajectory(3, t2bs[i], label='Target')
+                plotter.draw_image_and_chessboard_corners(1, images[i], imgps[i])
+                plotter.draw_image_and_chessboard_corners(2, images[i], imgps_reproject[i])
+                # print(f"Image {i} time: {time.time()-start:.4f}s")
+
+                HILIGHT_PRINT(f"Image {i} re-projection error: {errors[i]:.4f}")
+                HILIGHT_PRINT(f"Target Position: {t2bs[i][0:3, 3]}")
+
+                start = time.time()
+                plotter.update()
+                # time.sleep(3)
+                # print(f"Update time: {time.time()-start:.4f}s")
+
+            ################################################
+            ##     Visualize True and Estimated c2g       ##
+            ################################################
+
+
+
+            T_true = np.eye(4)
+            T_true[:3,:3] = quat.quat2mat(rot_true)
+            T_true[:3, 3] = pos_true
+
+            plotter.draw_coordinate_axes(0,T_true, scale=0.1,label='Ground True')
+            plotter.draw_coordinate_axes(1,c2g, scale=0.1,label='Estimated')
+
+
+
+
+
+        if mode == 'eye-to-hand':
+            c2b = calibration_eye2hand(g2bs,t2cs)
+
+            t2gs = [b2g.T @ c2b @ t2c for b2g,t2c in zip(g2bs,t2cs)]
+            res = c2b
+
+            ## show calibration info
+            HILIGHT_PRINT("\nExtrinsics",res)
+            pos = res[0:3, 3]
+            rot = quat.mat2quat(res[:3, :3])
+            print(f'Position: {pos}')
+            print(f'Rotation: {rot}')
+
+            ######################################
+            ###    Visualize Trajectory        ###
+            ######################################
+
+            for i in range(len(c2bs)):
+                
+                # count time in the loop
+                start = time.time()
+                plotter.update_trajectory(1, t2gs[i], label='Target2Gripper')
+                plotter.draw_image_and_chessboard_corners(1, images[i], imgps[i])
+                plotter.draw_image_and_chessboard_corners(2, images[i], imgps_reproject[i])
+                # print(f"Image {i} time: {time.time()-start:.4f}s")
+
+                # HILIGHT_PRINT(f"Image {i} re-projection error: {errors[i]:.4f}")
+
+                start = time.time()
+                plotter.update()
+                # print(f"Update time: {time.time()-start:.4f}s")
+        
+    
+
+            plt.show()
 
         ## Dump to yaml
+        # config['intrinsic_matrix'] = mtx_initial.tolist()
+        # config['distortion_coefficients'] = dist_initial.tolist()
+        # config['extrinsics'] = c2g.tolist()
+        # with open('config_gen.yaml', 'w') as f:
+        #     dump(config, f, Dumper=Dumper)
 
-        config['intrinsic_matrix'] = mtx.tolist()
-        config['distortion_coefficients'] = dist.tolist()
-        config['extrinsics'] = c2g.tolist()
-        with open('config_gen.yaml', 'w') as f:
-            dump(config, f, Dumper=Dumper)
-
-
-        ################################################
-        ##     Visualize True and Estimated c2g       ##
-        ################################################
-        rot_true = np.array([0.9820343852043152, 0.0042511820793151855, 0.18733306229114532, 0.022285446524620056])
-        pos_true = np.array([0.0382, -0.018, 0.10315])
-
-        T_true = np.eye(4)
-        T_true[:3,:3] = quat.quat2mat(rot_true)
-        T_true[:3, 3] = pos_true
-
-        plotter.draw_coordinate_axes(0,T_true, scale=0.1,label='Ground True')
-        plotter.draw_coordinate_axes(1,c2g, scale=0.1,label='Estimated')
-
-    plt.show()
 
 
 if __name__ == '__main__':
