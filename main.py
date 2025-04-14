@@ -54,6 +54,10 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
                 images_list = unzip(observations['images']['cam_right_wrist'])
 
             print(f"total qpos number in {file_name} :", len(images_list))
+
+            if index_list is None:
+                index_list = np.arange(len(images_list))
+            
             print("sample number:", len(index_list))
 
             for index in index_list:
@@ -76,6 +80,8 @@ def read_data_from_hdf5(folder_path, camera_type:str, index_list:list):
                 else:
                     hdf5_data['sim_qpos'].append(qpos)
                     hdf5_data['image'].append(image)
+
+        index_list = None
     
     print(f"actual qpos number: {len(hdf5_data['image'])}")
     return hdf5_data # len == 20
@@ -144,13 +150,47 @@ def calculate_reprojection_error(objps,imgps,rvecs,tvecs,mtx,dist,log=True):
     return imgps_reproject,errors
 
 
+def calculate_intrinsic(objps,imgps,image_size,mtx=None,dist=None):
+    '''
+    
+    '''
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objps, imgps, image_size, cameraMatrix=mtx, distCoeffs=dist)
+    
+    if ret:
+        print("\nIntrinsic matrix:", mtx,sep="\n")
+        print("\nDistortion coefficients:", dist,sep=" ")
+    else:
+        print("Camera calibration failed")
+
+    return mtx, dist
+
+def solvePnp(objps,imgps,mtx,dist):
+    '''
+    using pnp to calculate the target2camera
+    '''
+    # calculate the rotation and translation vectors
+    Ts = []
+    rvecs = []
+    tvecs = []
+    for i in range(len(objps)):
+        ret, rvec, tvec = cv2.solvePnP(objps[i], imgps[i], mtx, dist)
+        T = np.eye(4)
+        R = cv2.Rodrigues(rvec)[0]
+        T[0:3, 0:3] = R
+        T[0:3, 3] = tvec.flatten()
+        Ts.append(T)
+        rvecs.append(rvec)
+        tvecs.append(tvec)
+        
+    return Ts, rvecs, tvecs
+
 import time
-def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mtx=None,dist=None):
+def get_poses(gripper2base,images,chessboard_size=(7,5),square_size=0.025,mtx=None,dist=None):
 
     HILIGHT_PRINT("Detecting Chessboard Corner ...")
     start = time.time()
 
-    objps, imgps, skip_list = detect_image_corners(image_list,chessboard_size,square_size)
+    objps, imgps, skip_list = detect_image_corners(images,chessboard_size,square_size)
     print(f"Skip list: {skip_list}")
 
     if len(objps) == 0:
@@ -169,7 +209,7 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
 
     HILIGHT_PRINT("Calibrating camera ...")
     start = time.time()
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objps, imgps, image_list[0].shape[1::-1], cameraMatrix=mtx, distCoeffs=dist)
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objps, imgps, images[0].shape[1::-1], cameraMatrix=mtx, distCoeffs=dist)
     HILIGHT_PRINT("end camera calibration, time:", time.time()-start)
 
     imgps_reproject,errors = calculate_reprojection_error(objps,imgps,rvecs,tvecs,mtx,dist)
@@ -196,7 +236,7 @@ def get_poses(gripper2base,image_list,chessboard_size=(7,5),square_size=0.025,mt
     gripper2base = [gripper2base[i] for i in range(len(gripper2base)) if i not in skip_list]
 
     # return filter image list
-    images = [image_list[i] for i in range(len(image_list)) if i not in skip_list]
+    images = [images[i] for i in range(len(images)) if i not in skip_list]
 
     return gripper2base,tar2cam,mtx,dist,images,imgps,imgps_reproject,errors
 
@@ -262,7 +302,7 @@ def main():
 
     logging.basicConfig(level=logging.INFO)
 
-    folder_path = "./data/new"
+    folder_path = "./data/board"
 
     HILIGHT_PRINT("Read config...")
     config = load(open('config.yaml'), Loader=Loader)
@@ -286,24 +326,71 @@ def main():
 
         # sharp image has been excluded
         # info_dict = read_data_from_hdf5(folder_path, 'left', generate_arithmetic_sequence(100,idx,idx+400))
-        print("select:",np.linspace(0, 33, 33, endpoint=False, dtype=int))
-        info_dict = read_data_from_hdf5(folder_path, 'left', np.linspace(0, 23, 24, endpoint=False, dtype=int))
+        
+        selects = np.linspace(0, 47, 48, endpoint=False, dtype=int)
+        info_dict = read_data_from_hdf5(folder_path, 'left', None)
 
-        qpos_list, image_list = info_dict['sim_qpos'], info_dict['image']
+        qposes, images = info_dict['sim_qpos'], info_dict['image']
 
-        ee_poses = []
-        for qpos in qpos_list:
+        g2bs = []
+        for qpos in qposes:
             all_qpos = initial_qpos.copy()
             all_qpos[planner.move_group_joint_indices] = qpos[:-1] # without gripper
             planner.pinocchio_model.compute_forward_kinematics(all_qpos)
             ee_pose = planner.pinocchio_model.get_link_pose(planner.move_group_link_id)
-            ee_poses.append(ee_pose.to_transformation_matrix())
+            g2bs.append(ee_pose.to_transformation_matrix())
         
         #! WARN rotation definition
 
-        g2bs,t2cs,mtx_initial,dist_initial,images, imgps,imgps_reproject,errors  = get_poses(ee_poses, image_list, chessboard_size, square_size,mtx=mtx_initial,dist=dist_initial)
+        ### optimize the instrinstic matrix ###
+
+        # g2bs,t2cs,mtx_initial,dist_initial,images, imgps,imgps_reproject,errors  = get_poses(g2bs, images, chessboard_size, square_size,mtx=mtx_initial,dist=dist_initial)
+        
+
+        #### using fixed instrinsic matrix ####
+        
+        HILIGHT_PRINT("Detecting Chessboard Corner ...")
+        HILIGHT_PRINT("Using chessboard size:", chessboard_size)
+        HILIGHT_PRINT("Using square size:", square_size)
+
+        objps, imgps, skip_list = detect_image_corners(images,chessboard_size,square_size)
+        print(f"Skip list: {skip_list}")
+
+        if len(objps) == 0:
+            print("No chessboard corners detected in the images")
+            return None
+
+        objps = np.array(objps)
+        imgps = np.array(imgps)
+
+        # calculate instrinsic matrix
+        # ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objps, imgps, images[0].shape[1::-1], cameraMatrix=mtx_initial, distCoeffs=dist_initial)
+        # print("\nIntrinsic matrix:", mtx,sep="\n")
+        # print("\nDistortion coefficients:", dist,sep=" ")
+
+        # store privious intrinsic matrix and distortion coefficients
+        mtx = mtx_initial
+        dist = dist_initial
+        t2cs,rvecs,tvecs = solvePnp(objps,imgps,mtx,dist)
+
+        imgps_reproject,errors = calculate_reprojection_error(objps,imgps,rvecs,tvecs,mtx_initial,dist_initial)
+
+        # construct homogenous transformation matrix        
+        trans = np.array([
+            [0, 0, 1, 0],
+            [-1, 0, 0, 0],
+            [0, -1, 0, 0],
+            [0, 0, 0, 1]
+        ])
+        t2cs = [trans @ T for T in t2cs]
+
+        # filter out the skipped images
+        g2bs = [g2bs[i] for i in range(len(g2bs)) if i not in skip_list]
+        images = [images[i] for i in range(len(images)) if i not in skip_list]
 
         plotter = TrajectoryPlotter()
+
+
         if mode == 'eye-in-hand':
             c2g = calibration(g2bs, t2cs)
 
@@ -359,8 +446,8 @@ def main():
                 plotter.update_trajectory(1, g2bs[i], label='Gripper')            
                 plotter.update_trajectory(2, c2bs[i], label='Camera')  
                 plotter.update_trajectory(3, t2bs[i], label='Target')
-                plotter.draw_image_and_chessboard_corners(1, images[i], imgps[i])
-                plotter.draw_image_and_chessboard_corners(2, images[i], imgps_reproject[i])
+                plotter.draw_image_and_chessboard_corners(1, images[i], imgps[i], pattern_size=chessboard_size)
+                plotter.draw_image_and_chessboard_corners(2, images[i], imgps_reproject[i], pattern_size=chessboard_size)
                 # print(f"Image {i} time: {time.time()-start:.4f}s")
 
                 HILIGHT_PRINT(f"Image {i} re-projection error: {errors[i]:.4f}")

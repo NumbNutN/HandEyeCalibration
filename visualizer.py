@@ -98,7 +98,7 @@ class TrajectoryPlotter:
 
         # self.ax.set_xlim([-0.2, 0.2])
 
-        plt.pause(0.001)  # 暂停以更新图形
+        plt.pause(2)  # 暂停以更新图形
 
 
     def draw_coordinate_axes(self, point_id, T, label=None,scale=1.0):
@@ -128,11 +128,11 @@ class TrajectoryPlotter:
         self.ax_pose.legend()
 
 
-    def draw_image_and_chessboard_corners(self, id,image, corners):
+    def draw_image_and_chessboard_corners(self, id,image, corners, pattern_size=(7, 5)):
         """
         """
         import cv2
-        image = cv2.drawChessboardCorners(image, (7, 5), corners, True)
+        image = cv2.drawChessboardCorners(image, pattern_size, corners, True)
 
         if(id == 1):
             self.ax_img1.cla()
